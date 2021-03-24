@@ -1,0 +1,382 @@
+---
+title: "analysis"
+output: 
+  word_document:
+    fig_height: 3 
+    fig_width: 5 
+    keep_md: yes 
+    reference_docx: reference_reach.docx
+params:
+  db_up: NA
+  clt: NA
+  strata: NA
+  weight: NA
+  fpop: NA
+  xi: NA
+  sm_xi: NA
+  T1filter: NA
+  T2filter: NA
+  yi: NA
+  D1filter: NA
+  D2filter: NA
+  nomb: NA
+  gptyp: NA
+  CL: NA
+  fsize: NA
+  ffont: NA
+  hgt: NA
+  wdh: NA
+  tabxfilter: NA
+  tabyfilter: NA
+  Y_cl: NA
+  labx: NA
+  laby: NA
+  H_col: NA
+  sdonut: NA
+  col_revert: NA
+  col_ramp: NA
+  smult: NA
+  flip: NA
+  sort: NA
+---
+
+```{r,echo = F, warning=FALSE, message=FALSE, results='asis' }
+
+library(knitr)
+opts_knit$set(progress = FALSE, verbose = FALSE)
+opts_chunk$set(warning=FALSE, message=FALSE, echo=FALSE)
+
+#showtext.auto()
+
+#showtext.auto()
+
+for (i in 1:length(params$weight)){
+		labx<-wrapit(
+				if(params$nomb[i]=="yes"){
+					if(is.na(params$labx[i])){
+						labx<-params$xi[[i]]
+					}else{
+						labx<-params$labx[i]
+					}
+				}else{
+					if(is.na(params$labx[i])){
+						labx<-params$yi[[i]]
+					}else{
+						labx<-params$labx[i]
+					}
+				}
+				)
+			laby<-wrapit(
+				if(params$nomb[i]=="yes"){
+					if(is.na(params$laby[i])){
+						laby<-params$yi[[i]]
+					}else{
+						laby<-params$laby[i]
+					}
+				}else{
+					if(is.na(params$laby[i])){
+						laby<-params$xi[[i]]
+					}else{
+						laby<-params$laby[i]
+					}
+				}
+				)
+			
+			
+			if(!is.na(params$Y_cl[i]) & (params$Y_cl[i]==FALSE|params$Y_cl[i]=="FALSE"|params$Y_cl[i]=="false")){
+				CL_up<-NA
+			} else {
+				CL_up<-params$CL[i]
+			}
+			
+			
+			
+			if(params$smult[i]){
+				index<-which(names(params$db_up) %in% c(c(params$sm_xi[[i]]),params$yi[[i]],params$strata[[i]],params$clt[i],params$weight[i],params$fpop[i],params$D1filter[i],params$D2filter[i]))
+			}else{
+				index<-which(names(params$db_up) %in% c(params$xi[[i]],params$yi[[i]],params$strata[[i]],params$clt[i],params$weight[i],params$fpop[i],params$D1filter[i],params$D2filter[i]))
+			}
+			
+			
+		    de<-params$db_up[,index]
+		
+			
+			if(params$D1filter[i]!="None"){
+				try(de<-de[!de[[params$D1filter[i]]]%in%params$T1filter[[i]],],silent=TRUE)
+				#de<-de[,which(!names(de) %in% params$D1filter)]
+			
+			}
+			if(params$D2filter[i]!="None"){
+				try(de<-de[!de[[params$D2filter[i]]]%in%params$T2filter[[i]],],silent=TRUE)
+				#de<-de[,which(!names(de) %in% params$D2filter)]
+			}
+					
+			
+			if(!params$smult[i]){
+				de<-na.omit(de)
+			}
+			
+			
+			if(params$smult[i] & params$nomb[i]=="no"){
+				for (o in params$sm_xi[[i]])
+				{
+					de[[o]]<-as.character(de[[o]])
+				}
+			}  else if( params$smult[i] & params$nomb[i]=="yes"){
+				for (o in params$sm_xi[[i]])
+				{
+					de[[o]]<-as.numeric(as.character(de[[o]]))
+				}
+			}
+		
+		
+			
+			if(params$clt[i]=="None"){
+				clust<-formula(paste0("~",1))
+			}else{
+				clust<-formula(paste0("~",params$clt[i]))
+			}
+
+			
+			if(all(params$strata[[i]]=="None")){
+				strat<-NULL
+			}else if(length(params$strata[[i]]) >1){
+				strat<-formula(paste0("~interaction(",paste(params$strata[[i]],collapse=","),")"))
+			}else{
+				strat<-formula(paste0("~",params$strata[[i]]))
+			}
+			 
+			if(params$weight[i]=="None"){
+				wgh=NULL
+			}else{
+				wgh<-formula(paste0("~",params$weight[i]))
+			}
+			
+			if(params$fpop[i]=="None"){
+				fpop=NULL
+			}else{
+				fpop<-formula(paste0("~",params$fpop[i]))
+			}
+			 
+			
+			
+		if(params$smult[i] & params$nomb[i]=="yes"){
+			dsamp<-svydesign(
+				id=clust,
+				strata=strat,
+				weights=wgh,
+				fpc=fpop, 
+				data=de,
+				nest=TRUE
+			)
+			
+			dbgr<-process_num(params$sm_xi[[i]],params$yi[[i]],dsamp,CL_up)
+			
+		} else if(params$smult[i] & params$nomb[i]=="no"){
+				dsamp<-svydesign(
+					id=clust,
+					strata=strat,
+					weights=wgh,
+					fpc=fpop, 
+					data=de,
+					nest=TRUE
+			)
+			
+			dbgr<-process_smultiple(params$sm_xi[[i]],params$yi[[i]],dsamp,CL_up)
+		
+		}else  if(params$nomb[i]=="yes" & length(params$yi[[i]])==1 ){
+			de[[params$xi[i]]]<-as.numeric(as.character(de[[params$xi[i]]]))
+			de[[params$yi[[i]]]]<-as.character(de[[params$yi[[i]]]])
+		
+		dsamp<-svydesign(
+				id=clust,
+				strata=strat,
+				weights=wgh,
+				fpc=fpop, 
+				data=de,
+				nest=TRUE
+			)
+				
+			dbgr<-process_num(params$xi[i],params$yi[[i]],dsamp,CL_up)
+			
+		}else if(length(params$yi[[i]])>1 & params$nomb[i]=="yes"){
+		
+			de[[params$xi[i]]]<-as.numeric(as.character(de[[params$xi[i]]]))
+			for(o in params$yi[[i]]){
+				de[[o]]<-as.character(de[[o]])
+			}
+			dsamp<-svydesign(
+				id=clust,
+				strata=strat,
+				weights=wgh,
+				fpc=fpop, 
+				data=de,
+				nest=TRUE
+			)
+			dbgr<-process_mutl_disa(params$xi[i],params$yi[[i]],dsamp,CL_up,params$nomb[i])
+		
+		
+		}else if(length(params$yi[[i]])>1 & params$nomb[i]!="yes"){
+		
+			de[[params$xi[i]]]<-as.character(de[[params$xi[i]]])
+			for(o in params$yi[[i]]){
+				de[[o]]<-as.character(de[[o]])
+			}
+			dsamp<-svydesign(
+				id=clust,
+				strata=strat,
+				weights=wgh,
+				fpc=fpop, 
+				data=de,
+				nest=TRUE
+			)
+			dbgr<-process_mutl_disa(params$xi[[i]],params$yi[[i]],dsamp,CL_up,params$nomb[i])
+				
+		
+		}else{
+
+			de[[params$xi[i]]]<-as.factor(as.character(de[[params$xi[i]]]))
+			de[[params$yi[[i]]]]<-as.factor(as.character(de[[params$yi[[i]]]]))
+			dsamp<-svydesign(
+				id=clust,
+				strata=strat,
+				weights=wgh,
+				fpc=fpop, 
+				data=de,
+				nest=TRUE
+			)
+			dbgr<-process_categories(params$yi[[i]],params$xi[i],dsamp,CL_up)
+		}	 
+
+
+			df<-dbgr[[1]][!dbgr[[1]][,1]%in%params$tabxfilter[[i]],]
+			df<-df[!df[,2]%in%params$tabyfilter[[i]],]
+			df<-sanit_dt(df)
+			
+			if(params$smult[i]){
+				spl<-str_split(params$sm_xi[[i]][1],"_._")
+				lab<-spl[[1]][length(spl[[1]])-1]
+				
+					df$xi<-rep(lab,nrow(df))
+			} else {
+					df$xi<-rep(params$xi[i],nrow(df))
+			}
+				
+			df$yi<-rep(params$yi[i],nrow(df))
+				
+			names(df)[names(df)=="X2.5.."]<-"2.5 %"
+			names(df)[names(df)=="X97.5.."]<-"97.5 %"
+			df<-df[!is.na(df$value),]
+
+		
+			if(params$nomb[i]=="yes"){
+				cdata <- df
+				ordeR<-cdata[with(cdata, order(-value)), ][,1]	
+			}else{	
+				if(length(unique(df[,2]))==1){
+					cdata <- df
+					ordeR<-cdata[with(cdata, order(-value, variable)), ][,1]
+				}else{
+					cdata <- ddply(df, "variable", summarise, mean = mean(value,na.rm=TRUE))
+					ordeR<-cdata[with(cdata, order(-mean, variable)), ][,1]
+				}
+			}
+			
+			
+			if(params$smult[[i]]){
+				titl<-paste0(lab,"  /  ", paste(params$yi[[i]],collapse = " - "))
+			} else {
+				titl<-paste0(paste(params$xi[[i]],collapse = " - "),"  /  ", paste(params$yi[[i]],collapse = " - "))
+			}
+			
+			cat(paste("\n# ",titl,"\n\n\n\n"))
+						
+			colorsc<-color_ramp(df,params$nomb[i],params$col_ramp[i],params$col_revert[i],params$H_col[i],params$smult[i],NULL)
+			
+	fig_n<- paste0("figure_",i)
+	ht<-round(as.numeric(params$hgt[i])*0.013,0)
+	lg<-round(as.numeric(params$wdh[i])*0.013,0)
+			
+			
+	if(params$nomb[i]!="yes"& params$gptyp[i]=="Heat map"){
+		cat(knit(text = knit_expand(text = 
+			 sprintf("```{r %s, fig.height=%s, fig.width=%s, results='asis'  }\n	
+				\n
+				cat('\n\n\n## Graph \n\n') 
+				\n
+				graph_crosst_sc(df,labx,laby,params$nomb[i],params$fsize[i],params$sort[i],ordeR,params$ffont[i],params$gptyp[i],params$flip[i],params$H_col[i],params$smult[i],params$col_ramp[i],params$col_revert[i],params$Y_cl[i])
+				\n\n\n
+				cat('\n\n\n## Table \n\n') 
+				\n
+				set.alignment('left')
+				kable(df)
+				\n\n\n
+			 ```", fig_n, ht, lg)
+		)))	
+	}else if (params$gptyp[i]=="Line") {		
+		cat(knit(text = knit_expand(text = 
+			sprintf("```{r %s,  fig.height=%s,fig.width=%s ,results='asis' }\n
+				\n
+				cat('\n\n\n## Graph \n\n') 
+				\n
+				graph_line(df,laby,params$fsize[i],params$ffont[i],params$H_col[i],params$nomb[i],params$col_ramp[i],params$col_revert[i],params$Y_cl[i])
+				\n\n\n
+				\n\n\n
+				cat('\n\n\n## Table \n\n') 
+				\n
+				set.alignment('left')
+				kable(df)
+				\n\n\n
+			```",fig_n, ht, lg)
+		)))	
+	}else if (params$gptyp[i]=="Pie Chart") {		
+		cat(knit(text = knit_expand(text = 
+			sprintf("```{r %s,  fig.height=%s,fig.width=%s ,results='asis' }\n
+				\n\n\n
+				cat('\n\n\n## Graph \n\n') 
+				\n
+				piechar(df,laby,params$sdonut[i],params$fsize[i],params$ffont[i],colorsc,params$Y_cl[i])
+				\n\n\n
+				\n\n\n
+				cat('\n\n\n## Table \n\n') 
+				\n
+				set.alignment('left')
+				kable(df)
+				\n\n\n
+			```",fig_n, ht, lg)
+		)))	
+	}else {		
+		cat(knit(text = knit_expand(text = 
+			sprintf("```{r %s,  fig.height=%s,fig.width=%s ,fig.align = 'center', results='asis' }\n
+				\n\n\n
+				cat('\n\n\n## Graph \n\n') 
+				\n
+				graph_crosst_sc(df,labx,laby,params$nomb[i],params$fsize[i],params$sort[i],ordeR,params$ffont[i],params$gptyp[i],params$flip[i],params$H_col[i],params$smult[i],params$col_ramp[i],params$col_revert[i],params$Y_cl[i])
+				\n\n\n
+				\n\n\n
+				cat('\n\n\n## Table \n\n') 
+				\n
+				set.alignment('left')
+				kable(df)
+				\n\n\n
+			```",fig_n, ht, lg)
+		)))	
+	}
+	if (params$nomb[i]=='yes'){
+		cat(paste("\n\n##  Statistics \n\n\n\n"))
+		cat(paste0("\n\n\n ","Table ",i,": x= ",paste(labx,collapse=" - "),"; y= ",paste(laby,collapse=" - "),"\n\n\n\n"))
+		cat(paste0("\n\n\n ",dbgr[[3]],"\n\n\n"))
+		pandoc.table(dbgr[[2]],use.hyphening = TRUE, keep.line.breaks = TRUE, split.table  = Inf, style='rmarkdown')
+	} else {
+		cat(paste("\n\n##  Statistics \n\n\n\n"))
+		cat(paste0("\n\n\n ","Table ",i,": x= ",paste(labx,collapse=" - "),"; y= ",paste(laby,collapse=" - "),"\n\n\n\n"))
+		cat(paste0("\n\n\n ",dbgr[[3]],"\n\n\n"))
+	
+	}
+}
+			
+
+```
+
+
+
