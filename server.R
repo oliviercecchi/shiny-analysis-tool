@@ -129,7 +129,7 @@ function(input, output, session) {
 				nest=TRUE
 			)
 			
-			dbgr<-process_smultiple(input$sm_xi,input$yi,dsamp,CL)
+			dbgr<-process_num(input$sm_xi,input$yi,dsamp,CL)
 		
 		}else if (input$smult & input$nomb=="no"){
 			dsamp<-svydesign(
