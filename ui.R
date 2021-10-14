@@ -4,6 +4,7 @@ navbarPage("Analysis tool",
 	tags$head(
 		tags$link(rel = "stylesheet", type = "text/css", href = "bootstrap.css")
 	),
+	
 	tabPanel("Load dada",
 		sidebarLayout(
 			sidebarPanel(
