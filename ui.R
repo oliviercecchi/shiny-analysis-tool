@@ -157,19 +157,17 @@ navbarPage("Analysis tool",
 				),
 				fluidRow(
 					column(6,
-						selectInput('tabxfilter', 'Hide target categories', NULL,multiple=T),
+						selectInput('tabxfilter', 'Hide disagregation categories', NULL,multiple=T),
 						textInput('laby', 'Target label')
 					),
 				  
 					column(6,
-						selectInput('tabyfilter', 'Hide disagregation categories', NULL,multiple=T),
+						selectInput('tabyfilter', 'Hide target categories', NULL,multiple=T),
 						textInput('labx', 'Disagregation label')
 					)
 				),width = 5
 			),
 			mainPanel(
-			
-			
 				plotOutput('plot1',width = "100%"),
 				width = 7
 			)
@@ -208,9 +206,9 @@ navbarPage("Analysis tool",
 					br(),
 					fileInput('data_update', 'Choose analysis log CSV file',accept=c('text/csv', 'text/comma-separated-values,text/plain')),
 					br(),
-					downloadButton("report", "Download report"),
+					downloadButton("report", "Download report in html"),
 					br(),
-					downloadButton("report_doc", "Download report word"),
+					downloadButton("report_doc", "Download report in word"),
 					br()
 				),
 				width = 3

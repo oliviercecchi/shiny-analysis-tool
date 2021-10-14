@@ -18,7 +18,7 @@ function(input, output, session) {
   observe({
   	updateSelectInput(session, "xi", choices = colnames(db()),selected =NULL)
   	updateSelectInput(session, "sm_xi", choices = colnames(db()),selected =NULL)
-  	updateSelectInput(session, "yi", choices = colnames(db()),selected =NULL)
+  	updateSelectInput(session, "yi", choices = colnames(db()),selected ="No_disagregation")
   	updateSelectInput(session, "clt", choices = c("None",colnames(db())),selected="None")
   	updateSelectInput(session, "strata", choices = c("None",colnames(db())),selected="None")
   	updateSelectInput(session, "weight", choices = c("None",colnames(db())),selected="None")
@@ -129,7 +129,7 @@ function(input, output, session) {
 				nest=TRUE
 			)
 			
-			dbgr<-process_num(input$sm_xi,input$yi,dsamp,CL)
+			dbgr<-process_smultiple(input$sm_xi,input$yi,dsamp,CL)
 		
 		}else if (input$smult & input$nomb=="no"){
 			dsamp<-svydesign(
@@ -141,7 +141,7 @@ function(input, output, session) {
 				nest=TRUE
 			)
 			
-			dbgr<-process_smultiple(input$sm_xi,input$yi,dsamp,CL)
+		dbgr<-process_smultiple(input$sm_xi,input$yi,dsamp,CL)
 		
 		}else if(input$nomb=="yes" & length(input$yi)==1){
 			de[[input$xi]]<-as.numeric(as.character(de[[input$xi]]))
@@ -215,7 +215,6 @@ function(input, output, session) {
 		}else{
 			clust<-formula(paste0("~",input$clt))
 		}
-
 		
 		if(all(input$strata=="None")){
 			strat<-NULL
@@ -285,56 +284,56 @@ function(input, output, session) {
 	})
 
   observe({
-	updateSelectInput(session, "tabxfilter", choices = c("None",levels(as.factor(dfr()[[1]][,1]))),selected="None")
-	updateSelectInput(session, "tabyfilter", choices = c("None",levels(as.factor(dfr()[[1]][,2]))),selected="None")
+	updateSelectInput(session, "tabxfilter", choices = c("None",levels(as.factor(dfr()[[1]]$rowname))),selected="None")
+	updateSelectInput(session, "tabyfilter", choices = c("None",levels(as.factor(dfr()[[1]]$variable))),selected="None")
   })
   
 	output$tableOut1 <- renderTable({dfr()[[1]]})
+	
   	output$out <- DT::renderDataTable({db()})
 	
     output$plot1 <- renderPlot({
-		df<-dfr()[[1]][!dfr()[[1]][,1]%in%input$tabxfilter,]
-		df<-df[!df[,2]%in%input$tabyfilter,]
+		df<-dfr()[[1]][!dfr()[[1]]$rowname%in%input$tabxfilter,]
+		df<-df[!df$variable%in%input$tabyfilter,]
 		df<-sanit_dt(df)
 		
 		if(input$smult){
 				spl<-str_split(input$sm_xi[1],"_._")
 				lab<-spl[[1]][length(spl[[1]])-1]
-				
 					df$xi<-rep(lab,nrow(df))
 			} else {
 					df$xi<-rep(input$xi,nrow(df))
 			}
 				
 			df$yi<-rep(input$yi,nrow(df))
-				
-			names(df)[names(df)=="X2.5.."]<-"2.5 %"
-			names(df)[names(df)=="X97.5.."]<-"97.5 %"
+	
 			df<-df[!is.na(df$value),]
 
 		
 		if(!input$smult & input$nomb=="yes"){
 			cdata <- df
-			ordeR<-cdata[with(cdata, order(-value)), ][,1]	
+			ordeR<-cdata[with(cdata, order(-value)), ]$rowname
 		}else{	
-			if(length(unique(df[,2]))==1){
+		  # CKECK HERE
+			if(length(unique(df$variable))==1){
 				cdata <- df
-				ordeR<-cdata[with(cdata, order(-value, variable)), ][,1]
+				ordeR<-cdata[with(cdata, order(-value, variable)), ]$rowname
+			# CKECK HERE
 			}else{
 				cdata <- ddply(df, "variable", summarise, mean = mean(value,na.rm=TRUE))
-				ordeR<-cdata[with(cdata, order(-mean, variable)), ][,1]
+				ordeR<-cdata[with(cdata, order(-mean, variable)), ]$rowname
 			}
 		}
 		
-    	 par(mar = c(0, 4.1, 0, 1))
-		 colorsc<-color_ramp(df,input$nomb,input$col_ramp,input$col_revert,input$H_col,input$smult,NULL)
+		par(mar = c(0, 4.1, 0, 1))
+		colorsc<-color_ramp(df,input$nomb,input$col_ramp,input$col_revert,input$H_col,input$smult,NULL)
 	
     	 if(input$gptyp=="Line"){
-			 graph_line(df,laby(),input$fsize,input$ffont,input$H_col,input$nomb,input$col_ramp,input$col_revert,input$Y_cl)
+			    graph_line(df,laby(),input$fsize,input$ffont,input$H_col,input$nomb,input$col_ramp,input$col_revert,input$Y_cl)
     	 }else if(input$gptyp=="Pie Chart"){		 
-			 piechar(df,laby(),input$sdonut,input$fsize,input$ffont,colorsc,input$Y_cl)
+			    piechar(df,laby(),input$sdonut,input$fsize,input$ffont,colorsc,input$Y_cl)
     	 }else{ 
-    		 graph_crosst_sc(df,labx(),laby(),input$nomb,input$fsize,input$sort,ordeR,input$ffont,input$gptyp,input$flip,input$H_col,input$smult,input$col_ramp,input$col_revert,input$Y_cl)
+    		  graph_crosst_sc(df,labx(),laby(),input$nomb,input$fsize,input$sort,ordeR,input$ffont,input$gptyp,input$flip,input$H_col,input$smult,input$col_ramp,input$col_revert,input$Y_cl)
     	 }
 		 
     },height = reactive(input$hgt),width = reactive(input$wdh))
@@ -349,8 +348,6 @@ function(input, output, session) {
 			dfr()[[2]]
 		},include.rownames=T)
 	
-	
-		
 		
 	logt<-reactive({
 		as.data.frame(
@@ -374,8 +371,6 @@ function(input, output, session) {
 	  saveData(logt())
 	})
 	
-	
-	
 	loadData <- function() {
 	  files <- list.files(file.path(responsesDir), full.names = TRUE)
 	  data <- lapply(files, read.csv, stringsAsFactors = FALSE)
@@ -388,7 +383,7 @@ function(input, output, session) {
 		  rownames = FALSE,
 		  options = list(searching = FALSE, lengthChange = FALSE)
 	)
-		
+	
 	observeEvent(input$refresh, {
 			output$test_log<-DT::renderDataTable(
 		  loadData(),
@@ -403,8 +398,7 @@ function(input, output, session) {
     })
 	
 	
-	# get the cleaning log
-
+	# get the log cleaned
 	observeEvent(input$delete, {
 		files<-list.files(path = paste0(getwd(),"/",responsesDir), 
 			pattern = NULL, all.files = FALSE,
@@ -431,15 +425,12 @@ function(input, output, session) {
 	
 
 	# redoing the analysis from the cleaning log
-	
-	
 	 log_analysis <- reactive({
 		inFile <- input$data_update
 		if (is.null(inFile)){
 		  return(NULL)
 		 }else{
 		dt<-read.csv(inFile$datapath)
-		#for (j in 1:ncol(dt)){dt[,j]<-recode(dt[,j],"''=NA;'na'=NA;'n/a'=NA")}
 		return(dt)
 		}
 	})
@@ -474,7 +465,7 @@ function(input, output, session) {
 	
 	 output$report <- downloadHandler(
       # For PDF output, change this to "report.pdf"
-      filename = "test_report.html",
+      filename = "analysis_report.html",
       content = function(file) {
         # Copy the report file to a temporary directory before processing it, in
         # case we don't have write permissions to the current working dir (which
@@ -533,7 +524,7 @@ function(input, output, session) {
 	
 	 output$report_doc <- downloadHandler(
       # For PDF output, change this to "report.pdf"
-      filename = "test_report.docx",
+      filename = "analysis_report.docx",
       content = function(file) {
         # Copy the report file to a temporary directory before processing it, in
         # case we don't have write permissions to the current working dir (which

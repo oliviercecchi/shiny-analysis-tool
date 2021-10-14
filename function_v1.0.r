@@ -1,8 +1,3 @@
-
-
-
-
-
 proper<-function(s) sub("(.)", ("\\U\\1"), tolower(s), pe=TRUE)
 
 wrapit <- function(text) {
@@ -64,405 +59,229 @@ class_assess<-function(df){
 } 
 
 
-process_num<-function(x,y,dstrat,CL){
-
-	for (dis in 1:length(x)) 
-	{
-		f<-formula(paste0("~",y,"+",x[dis]))
-		ft<-formula(paste0(x[dis],"~",y))
-		fx<-formula(paste0("~",x[dis]))
-		fy<-formula(paste0("~",y))
-		
-
-		mytable<- mytable<-svyby(fx,fy,dstrat,svymean,na.rm.all=T,na.rm=T)
-		mytable<-mytable[,-3]
-		
-		a<-NA
-		
-		try(a<-confint(svyby(fx,fy, dstrat,svymean,na.rm.all=T,na.rm.by=T,drop.empty.groups=F),level=CL),silent=TRUE)
-		
-		if(!all(is.na(a))){
-			dbgr<-cbind(mytable,a)
-		} else {
-			dbgr<-mytable
-		}
-		
-		names(dbgr)[2]<-"value"
-		
-		dbgr<-data.frame(append(dbgr,"variable", after =  1),check.names=FALSE,stringsAsFactors=F)
-		names(dbgr)[2]<-"variable"
-		dbgr$variable<-rep(x[dis],nrow(dbgr))
-		
-		stest<-NA
-		s_dstrat<-NA
-		
-		lev<-unique(dstrat$variable[[y]])
-		sq<-length(lev)
-		cr<-as.data.frame(matrix(,nrow=sq,ncol=sq))
-		row.names(cr)<-lev
-		names(cr)<-lev
-		
-		if(length(x)==1){	
-			for (i in lev)
-			{
-				for(j in lev)
-				{
-					if(i!=j){
-						s_dstrat<-subset(dstrat,(!is.na(dstrat$variable[[x[dis]]])&!is.na(dstrat$variable[[y]]))&(dstrat$variable[[y]]==i|dstrat$variable[[y]]==j))
-						try(stest<-svyttest(ft, design=s_dstrat),silent=TRUE)
-						if(!is.na(stest)){
-							cr[which(row.names(cr)==i),which(names(cr)==j)]<-round(as.numeric(stest$p.value),3)
-						}	
-					}
-				}
-			}
-		}  else {
-			cr<-NA
-		}
-		
-		if (dis==1){
-			out<-dbgr
-		}else{
-			out<-rbind.fill(out,dbgr)
-		}
-	}
-	names(out)[1]<-"rowname"
-	dbgr<-out
-		
-	if(length(x)==1){	
-		tname<-paste0("Pairwise design based t-test; Valid n=", nrow(dstrat$variable)," p-values = ")
-	}else{
-			tname<-paste0("Valid n=", nrow(dstrat$variable))
-	}
-	
-	return(list(dbgr,cr,tname))	
+# small function to merge CI and data used into process numbers
+merge_cfint<-function(a,dbgr,y){
+  
+  index<-do.call(paste, c(dbgr[,1:2], sep = ":"))
+  dbgr<-cbind(dbgr,index) 
+  
+  rown<-data.frame(do.call('rbind', strsplit(as.character(row.names(a)),"\\:",fixed=F)))
+  rown[,2]<-gsub(paste0("^",y),"",rown[,2])
+  cfint<-data.frame(a,rown)
+  
+  index1<-do.call(paste, c(cfint[,4:3], sep = "::"))
+  index2<-do.call(paste, c(cfint[,3:4], sep = "::"))
+  if(length(which(index%in%index1))>length(which(index%in%index2))){
+    index<-index1	
+  } else {
+    index<-index2
+  }
+  
+  cfint<-cbind(cfint,index)[,c(1,2,5)]
+  names(cfint)[1:2]<-c("ci_lw","ci_up")
+  dbgr<-merge(dbgr,cfint,by.x="id",by.y="index")[,-1]
+  return(dbgr)
 }
 
 
-process_mutl_disa<-function(x,y,dstrat,CL,nb){
 
-	if(nb=="no"){
-		
-		f<-formula(paste0("~",x,"+",paste0("interaction(",paste(y,collapse=","),")")))
-		fx<-formula(paste0("~",x))
-		fy<-formula(paste0("~",paste0("interaction(",paste(y,collapse=","),")")))
-		
-		mytable<-svytable(f, dstrat, Ntotal = NULL, round = F)
-		tname<-NA
-		stat<-NA
-		stdf<-NA
-		pval<-NA
-		test<-NA
-		
-		try(test<-svychisq(f,dstrat,statistic = "Chisq"),silent = TRUE)
-		
-		try(tname<-test$method,silent = TRUE)
-		try(stat<-round(test$statistic,2),silent = TRUE)
-		try(stdf<-test$parameter,silent = TRUE)
-		try(pval<-round(test$p.value,3),silent = TRUE)
-				
-		mytable<-as.data.frame(mytable)	
-		mytable<-mytable[mytable[,1]!="NA"&!is.na(mytable[,1]),]
-		mytable<-mytable[mytable[,2]!="NA"&!is.na(mytable[,2]),]
-				
-		mytable$Freq = do.call(c,tapply(mytable$Freq, mytable[,2], function(x) { x / sum(x)  }, simplify = TRUE))
-		
-		
-		mytable<-as.data.frame(mytable)
+# create mean aggregatation and t-test
+process_num<-function(x,y,dstrat,CL,type="avg",stat.test=FALSE){
+  for (dis in 1:length(x)) 
+  {
+    f<-formula(paste0("~",y,"+",x[dis]))
+    ft<-formula(paste0(x[dis],"~",y))
+    fx<-formula(paste0("~",x[dis]))
+    fy<-formula(paste0("~",y))
+    
+    if(type=="avg"){myfuny<-svymean}else if(type=="sum"){myfuny<-svytotal}
+    
+    mytable<- mytable<-svyby(fx,fy,dstrat,myfuny,na.rm=T)
+    mytable<-mytable[,-3]
+    
+    dstrat_confint<-dstrat
+    a<-NA
+    try(a<-confint(svyby(fx,fy, dstrat_confint,myfuny,na.rm.by=T,na.rm.all=T,drop.empty.groups=T),level=CL) %>% as.data.frame(),silent=TRUE)
+    
+    if(!all(is.na(a))){
+      names(a)<-c("ci_lw","ci_up")
+      dbgr<-cbind(mytable,a)
+    } else {
+      dbgr<-mytable
+    }
+    names(dbgr)[2]<-"value"
+    
+    dbgr<-data.frame(append(dbgr,"variable", after =  1),check.names=FALSE,stringsAsFactors=F)
+    
+    names(dbgr)[2]<-"variable"
+    dbgr$variable<-rep(x[dis],nrow(dbgr))
+    
+    stest<-NA
+    s_dstrat<-NA
+    
+    lev<-unique(dstrat$variable[[y]])
+    sq<-length(lev)
+    cr<-as.data.frame(matrix(,nrow=sq,ncol=sq))
+    row.names(cr)<-lev
+    names(cr)<-lev
+    
+    # create a matrix with p-values
+    
+    if(stat.test&(length(x)==1)){	
+      for (i in lev)
+      {
+        for(j in lev)
+        {
+          if(i!=j){
+            s_dstrat<-subset(dstrat,(!is.na(dstrat$variable[[x[dis]]])&!is.na(dstrat$variable[[y]]))&(dstrat$variable[[y]]==i|dstrat$variable[[y]]==j))
+            try(stest<-svyttest(ft, design=s_dstrat),silent=TRUE)
+            if(!all(is.na(stest))){
+              cr[which(row.names(cr)==i),which(names(cr)==j)]<-round(as.numeric(stest$p.value),3)
+            }	
+          }
+        }
+      }
+    }  else {
+      cr<-NA
+    }
+    
+    if (dis==1){
+      out<-dbgr
+    }else{
+      out<-rbind.fill(out,dbgr)
+    }
+  }
+  names(out)[1]<-"rowname"
+  dbgr<-out
+  
+  if(stat.test&(length(x)==1)){		
+    tname<-paste0("Pairwise design based t-test; Valid n=", nrow(dstrat$variable)," p-values = ")
+  }else{
+    tname<-paste0("Valid n=", nrow(dstrat$variable))
+  }
+  
+  return(list(data=dbgr, pvalue = cr , test.name = tname))	
+}
 
-		
-		datab<-acast(mytable,mytable[,1]~mytable[,2], value.var="Freq",drop=TRUE)
-		datac<-datab
-		
-		rowname<-c(row.names(datab))
-		datab<-as.data.frame(datab)
-		datab<-cbind(rowname,datab)
-		dbgr<-melt(datab,id="rowname")
-				
-				
-		a<-NA
-		try(a<-confint(svyby(fx,fy, dstrat,svymean,na.rm.all=T,drop.empty.groups=F,na.rm.by=T),level=CL))
-		
-		if (ncol(dbgr)==1){
-			dbgr<-cbind(dbgr,a)
-		} else if(!all(is.na(a))){
-			rown<-data.frame(do.call('rbind', strsplit(as.character(row.names(a)),"\\:",fixed=F)))
-			rown[,2]<-gsub(x,"",rown[,2])
-			cfint<-data.frame(a,rown)
-			index<-do.call(paste, c(dbgr[,1:2], sep = ":"))
-			dbgr<-cbind(dbgr,index) 
-			index<-do.call(paste, c(cfint[,4:3], sep = ":"))
-			cfint<-cbind(cfint,index)[,c(1,2,5)]
-			dbgr<-merge(dbgr,cfint,by="index")[,-1]
-			# dbgr[,4]<-dbgr[,4]*100
-			# dbgr[,5]<-dbgr[,5]*100
-			
 
-		}
-		
-		factvar<-data.frame(do.call('rbind', strsplit(as.character(dbgr$variable),"\\.",fixed=F)))
-		dbgr$variable<-factvar[,2]
-		dbgr$facet<-factvar[,1]
-		
-			
-		if(any(!is.na(x))&any(x!="Na")&any(x!="NA")){
-			labx=as.character(x)
-		}else{
-			labx=""
-		}
-				
-		#names(dbgr)[1]=as.character(labx)
-		dbgr<-dbgr[!is.na(dbgr$value),]
-				
-		tname<-""
-		statis<-""
-			
-		return(list(dbgr,statis,tname))
+process_categories <- function (x,y,dstrat,CL,stat.test=FALSE){
 
-	} else if(nb=="yes"){
+  f<-formula(paste0("~",x,"+",y))
+  fx<-formula(paste0("~",x))
+  fy<-formula(paste0("~",y))
+  tname<-NA;stat<-NA;stdf<-NA;pval<-NA;test<-NA
+  
+  if(length(na.omit(unique(dstrat$variable[[y]])))==1)
+  {
+    dbgr<-data.frame(
+      rowname=unique(dstrat$variable[[x]]),
+      variable=na.omit(unique(dstrat$variable[[y]])),
+      value=1
+    )
+  }else{
+    mytable<-svytable(f, dstrat, Ntotal = NULL, round = F)
+    
+    dbgr<-
+      mytable %>% 
+      apply(.,1,function(x){x/sum(x)}) %>% 
+      melt
+    
+    dbgr$id<-paste0(dbgr[[x]],"::",dbgr[[y]])
+    
+    dbcr<- mytable %>% melt
+    
+    dbcr$id<-paste0(dbcr[[x]],"::",dbcr[[y]])
+    dbcr$count<-dbcr$value
+    dbcr<-dbcr[,c("id","count")]
+    
+    dbgr<-merge(dbgr,dbcr,by="id")
+    
+    if(ncol(dbgr)==1){
+      dbgr$variable<-unique(dstrat$variable[[y]])
+      dbgr$rowname<-rownames(dbgr)
+    }else{
+      names(dbgr)[names(dbgr)%in%y]<-c("variable")
+      names(dbgr)[names(dbgr)%in%x]<-c("rowname")
+    }
+    
+    # try chi square
+    if(stat.test){
+      try({
+        test<-svychisq(f,dstrat,statistic = "Chisq")
+        tname<-test$method
+        stat<-round(test$statistic,3)
+        stdf<-test$parameter
+        pval<-round(test$p.value,3)
+      },silent=TRUE)
+    }
+    
+    a<-NA
+    try(a<-confint(svyby(fy,fx, dstrat,svymean,na.rm.all=T,na.rm.by=F,drop.empty.groups=F),level=CL),silent=TRUE)
+    
+    if (ncol(dbgr)==1){
+      dbgr<-cbind(dbgr,a)
+      dbgr$rownname<-rownames(dbgr)
+    } else if(!all(is.na(a))){
+      dbgr<-merge_cfint(a,dbgr,y)
+    }
+  }
+  
+  dbgr<-dbgr[!is.na(dbgr$value),]
+  dbgr[,1]<-factor(dbgr[,1], levels=sort(unique(dbgr[,1]), decreasing=TRUE))
+  dbgr[,2]<-factor(dbgr[,2], levels=sort(unique(dbgr[,2]), decreasing=TRUE))
+  
+  if(stat.test){
+    tname<-paste0(tname,", p-value=",pval,"; Valid n: ",nrow(dstrat$allprob),"\n\n\n")
+    statis<-pval
+  } else {
+    tname<-paste0("Valid n: ",nrow(dstrat$allprob),"\n\n\n")
+    statis<-NA
+  }
+  return(list(data=dbgr, pvalue = statis , test.name = tname))	
+}
 
-		f<-formula(paste0("~",x,"+",paste0("interaction(",paste(y,collapse=","),")")))
-		ft<-formula(paste0(x,"~",paste0("interaction(",paste(y,collapse=","),")")))
-		fx<-formula(paste0("~",x))
-		fy<-formula(paste0("~",paste0("interaction(",paste(y,collapse=","),")")))
-				
-		mytable<-svyby(fx,fy,dstrat,svymean,na.rm.all=T)
-				
-		mytable<-mytable[,-3]
-		
-		a<-NA
-		try(a<-confint(svyby(fx,fy, dstrat,svymean,na.rm.all=T,na.rm.by=T,drop.empty.groups=F),level=CL),silent=TRUE)
-			
-		if(!all(is.na(a))){
-			dbgr<-cbind(mytable,a)
-		} else {
-			dbgr<-mytable
-		}
-				
-		lev<-unique(dbgr[,1])
-				
-		names(dbgr)[2]<-"value"
-				
-		dbgr<-data.frame(append(dbgr,"variable", after =  1),check.names=FALSE,stringsAsFactors=F)
-		names(dbgr)[2]<-"variable"
-				
-		#dbgr$variable<-rep(x,nrow(dbgr))
-				
-				
-		ds<-data.frame(do.call('rbind', strsplit(as.character(dbgr[,1]),"\\.",fixed=F)))		
-		dbgr[,1]<-as.character(ds[,2])
-		dbgr$variable<-as.character(ds[,1])
-				
-		stest<-NA
-		s_dstrat<-NA
-				
-		sq<-length(lev)
-				
-		cr<-as.data.frame(matrix(,nrow=sq,ncol=sq))
-				
-		row.names(cr)<-lev
-		names(cr)<-lev
-						
-		for (i in 1:length(lev))
-		{
-			stest<-NA
-			for(j in 1:length(lev))
-				{
-				if(i!=j){
-					s_dstrat<-subset(dstrat,
-						(dstrat$variable[[y[2]]]==dbgr[i,1] & dstrat$variable[[y[1]]]==dbgr$variable[i])
-						|
-						(dstrat$variable[[y[2]]]==dbgr[j,1] & dstrat$variable[[y[1]]]==dbgr$variable[j])
-					)
-						
-					try(stest<-svyttest(ft, design=s_dstrat),silent=TRUE)
-					if(!all(is.na(stest))){
-						cr[which(row.names(cr)==lev[i]),which(names(cr)==lev[j])]<-round(as.numeric(stest$p.value),3)
-					}	
-				}
-			}
-		}
-				
-		tname<-paste0("Pairwise design based t-test; Valid n=", nrow(dstrat$variable)," p-values = ")
-			
-		statis<-cr
-				
-		return(list(dbgr,statis,tname))
+# aggregation select multiple
+process_smultiple<-function (x,y,dstrat,CL,stat.test=FALSE){
+  for (dis in 1:length(x)) 
+  {
+    level<-tail(strsplit(x[dis],"_._")[[1]],1)
+    
+    factlev<-c('1',"yes","TRUE",TRUE)
+    output<-process_categories(y,x[dis],dstrat,CL,stat.test=stat.test)
+    dbgr<-output$data
+    dbgr<-dbgr[dbgr$variable%in%factlev,]
+    dbgr$variable<-rep(level,nrow(dbgr))
+    
+    if (dis==1){
+      out<-dbgr
+    }else{
+      out<-rbind.fill(out,dbgr)
+    }
+  }
+  test="None"
+  pval="None"
+  dbgr<-out
+  return(list(data=dbgr, pvalue = pval , test.name = test))	
+}
 
-	}
+
+# aggregation with multiple disaggregation
+process_mutl_disa<-function(x,y,dstrat,CL,nb,stat.test=FALSE){
+  
+  f<-formula(paste0("~",x,"+",paste0("interaction(",paste(y,collapse=","),")")))
+  ft<-formula(paste0(x,"~",paste0("interaction(",paste(y,collapse=","),")")))
+  fx<-formula(paste0("~",x))
+  fy<-formula(paste0("~",paste0("interaction(",paste(y,collapse=","),")")))
+  
+  if(nb=="no"){
+    process_categories(y,x,dstrat,CL,stat.test=stat.test)
+  } else if(nb=="yes"){
+    process_num(x,y,dstrat,CL,stat.test=stat.test)	
+  }
 }	
-	
-
-process_categories <- function (x,y,dstrat,CL){
-	f<-formula(paste0("~",x,"+",y))
-	fx<-formula(paste0("~",x))
-	fy<-formula(paste0("~",y))
-	
-	mytable<-svytable(f, dstrat, Ntotal = NULL, round = F)
-	tname<-NA
-	stat<-NA
-	stdf<-NA
-	pval<-NA
-	test<-NA
-			
-	try(test<-svychisq(f,dstrat,statistic = "Chisq"),silent = TRUE)
-	
-	try(tname<-test$method,silent = TRUE)
-	try(stat<-round(test$statistic,2),silent = TRUE)
-	try(stdf<-test$parameter,silent = TRUE)
-	try(pval<-round(test$p.value,3),silent = TRUE)
-			
-	mytable<-as.data.frame(mytable)	
-	mytable<-mytable[mytable[,1]!="NA"&!is.na(mytable[,1]),]
-	mytable<-mytable[mytable[,2]!="NA"&!is.na(mytable[,2]),]
-	datab<-acast(mytable,mytable[,1]~mytable[,2], value.var="Freq",drop=TRUE)
-	
-	datac<-datab
-			
-	if(y=="No_disagregation"){
-		for (i in 1:length(datab[,1])){
-			datab[i,]<-round(datab[i,]/sum(datab),3)
-		}
-	}else{
-		for (i in 1:length(datab[,1])){
-			datab[i,]<-round(datab[i,]/sum(datab[i,]),3)
-		}
-	}
-
-	rowname<-c(row.names(datab))
-	datab<-as.data.frame(datab)
-	datab<-cbind(rowname,datab)
-			
-	dbgr<-melt(datab,id="rowname")
-	
-	a<-NA
-	try(a<-confint(svyby(fy,fx, dstrat,svymean,na.rm.all=T,na.rm.by=T,drop.empty.groups=F),level=CL))
-	
-	if (ncol(dbgr)==1){
-	  dbgr<-cbind(dbgr,a)
-	} else if(!all(is.na(a))){
-		rown<-data.frame(do.call('rbind', strsplit(as.character(row.names(a)),':',fixed=TRUE)))
-		rown[,2]<-gsub(y,"",rown[,2])
-		cfint<-data.frame(a,rown)
-		index<-do.call(paste, c(dbgr[,1:2], sep = ":"))
-		dbgr<-cbind(dbgr,index) 
-		index<-do.call(paste, c(cfint[,3:4], sep = ":"))
-		cfint<-cbind(cfint,index)[,c(1,2,5)]
-		dbgr<-merge(dbgr,cfint,by="index")[,-1]
-	}
-	
-	
-	if(any(!is.na(x))&any(x!="Na")&any(x!="NA")){
-		labx=as.character(x) 
-		titl<-paste0(y," by ",tolower(labx))
-	}else{
-		labx=""
-		titl<-paste0(y,"")
-	}
-			
-	#names(dbgr)[1]=as.character(labx)
-	dbgr<-dbgr[!is.na(dbgr$value),]
-			
-	dbgr[,1]<-factor(dbgr[,1], levels=sort(unique(dbgr[,1]), decreasing=TRUE))
-	dbgr[,2]<-factor(dbgr[,2], levels=sort(unique(dbgr[,2]), decreasing=TRUE))
-
-		tname<-paste0(tname,", p-value=",pval,"; Valid n: ",nrow(dstrat$allprob),"\n\n\n")
-		statis<-""
-		
-		return(list(dbgr,statis,tname))
-}
 
 
-process_smultiple<-function (x,y,dstrat,CL){
-	for (dis in 1:length(x)) 
-	{
-		f<-formula(paste0("~",y,"+",x[dis]))
-		fx<-formula(paste0("~",x[dis]))
-		fy<-formula(paste0("~",y))
-		
-		level<-tail(strsplit(x[dis],"_._")[[1]],1)
-		
-		factlev<-"1"
-		
-		
-		mytable<-svytable(f, dstrat, Ntotal = NULL, round = F)
-		
-		tname<-NA
-		stat<-NA
-		stdf<-NA
-		pval<-NA
-		test<-NA
-				
-		try(test<-svychisq(f,dstrat,statistic = "Chisq"),silent = TRUE)
-		
-		try(tname<-test$method,silent = TRUE)
-		try(stat<-round(test$statistic,2),silent = TRUE)
-		try(stdf<-test$parameter,silent = TRUE)
-		try(pval<-round(test$p.value,3),silent = TRUE)
-				
-		mytable<-as.data.frame(mytable)	
-		mytable<-mytable[mytable[,1]!="NA"&!is.na(mytable[,1]),]
-		mytable<-mytable[mytable[,2]!="NA"&!is.na(mytable[,2]),]
-		datab<-acast(mytable,mytable[,1]~mytable[,2], value.var="Freq",drop=TRUE)
-		datac<-datab
-				
-		if(y=="No_disagregation"){
-			for (i in 1:length(datab[,1])){
-				datab[i,]<-round(datab[i,]/sum(datab),3)
-			}
-		}else{
-			for (i in 1:length(datab[,1])){
-				datab[i,]<-round(datab[i,]/sum(datab[i,]),3)
-			}
-		}
 
-		rowname<-c(row.names(datab))
-		datab<-as.data.frame(datab)
-		datab<-cbind(rowname,datab)
-				
-		dbgr<-melt(datab,id="rowname")
-		
-		# dbgr$value<-round(dbgr$value*100,1)
-			
-		a<-NA
-		try(a<-confint(svyby(fx,fy, dstrat,svymean,na.rm.all=T,na.rm.by=T,drop.empty.groups=F),level=CL))
-		
-		if (ncol(dbgr)==1){dbgr<-cbind(dbgr,a)
-		} else if(!all(is.na(a))){
-			rown<-data.frame(do.call('rbind', strsplit(as.character(row.names(a)),':',fixed=TRUE)))
-			rown[,2]<-gsub(x[dis],"",rown[,2])
-			cfint<-data.frame(a,rown)
-			index<-do.call(paste, c(dbgr[,1:2], sep = ":"))
-			dbgr<-cbind(dbgr,index) 
-			index<-do.call(paste, c(cfint[,3:4], sep = ":"))
-			cfint<-cbind(cfint,index)[,c(1,2,5)]
-			dbgr<-merge(dbgr,cfint,by="index")[,-1]
-			# dbgr[,4]<-dbgr[,4]*100
-			# dbgr[,5]<-dbgr[,5]*100
-		}
-		if(!is.na(x[dis])&!x[dis]=="Na"&!x[dis]=="NA"){
-			labx=as.character(x[dis])
-			titl<-paste0(y," by ",tolower(labx))
-		}else{
-			labx=""
-			titl<-paste0(y,"")
-		}
-		
-		dbgr<-dbgr[dbgr$variable==factlev,]
-		dbgr$variable<-rep(level,nrow(dbgr))
-		
-		if (dis==1){
-			out<-dbgr
-		}else{
-			out<-rbind.fill(out,dbgr)
-		}
-	}
-	dbgr<-out
-		
-	
-	return(list(dbgr,test,pval))
-	
-}
 
 
 color_ramp<-function(x,nb,col_ramp_typ,col_revert,def_col,smult,var_col){
@@ -472,10 +291,10 @@ color_ramp<-function(x,nb,col_ramp_typ,col_revert,def_col,smult,var_col){
 			nb_col<-1
 		} else if((smult & nb=="no")|any(names(x)%in%"facet")){
 			k<-1
-			nb_col<-length(unique(x[,k]))
+			nb_col<-length(unique(x$rowname))
 		}else{
 			k<-2
-			nb_col<-length(unique(x[,k]))
+			nb_col<-length(unique(x$variable))
 		}
 		
 	} else {
@@ -550,16 +369,15 @@ graph_crosst_sc<-function(datag,labx,laby,nb,fsize,is_ordered,ordeR,font_family,
 	# here can percentage
 	fct<-100
 	
-	names(datag)[1]<-"disa"
+	#names(datag)[1]<-"rowname"
 	
 	if(cl_yn){
-		names(datag)[4:5]<-c("cl_lw","cl_up")
 		if(nb=="yes"){
-			datag$cl_lw<-coerc(datag$cl_lw)
-			datag$cl_up<-coerc(datag$cl_up)
+			datag$ci_lw<-coerc(datag$ci_lw)
+			datag$ci_up<-coerc(datag$ci_up)
 		}else{
-			datag$cl_lw<-coerc(datag$cl_lw)*fct
-			datag$cl_up<-coerc(datag$cl_up)*fct
+			datag$ci_lw<-coerc(datag$ci_lw)*fct
+			datag$ci_up<-coerc(datag$ci_up)*fct
 		}
 	}
 	
@@ -576,13 +394,13 @@ graph_crosst_sc<-function(datag,labx,laby,nb,fsize,is_ordered,ordeR,font_family,
 		typ<-"heat"
 		
 		datag$variable<-factor(datag$variable,levels=rev(levels(factor(datag$variable))))
-		p <- ggplot(datag, aes(x=disa, y=variable)) 
+		p <- ggplot(datag, aes(x=rowname, y=variable)) 
 		p<-p+geom_tile(aes(fill = value),colour = "white")
 		if(cl_yn){
 			if(nb=="yes"){
-				p<-p+geom_text(aes(label=paste(round(value,2)," (",round(cl_lw,2)," , ",round(cl_up,2),")",sep="")), family=font_family,size = fsize,color="#42423E")
+				p<-p+geom_text(aes(label=paste(round(value,2)," (",round(ci_lw,2)," , ",round(ci_up,2),")",sep="")), family=font_family,size = fsize,color="#42423E")
 			}else{
-				p<-p+geom_text(aes(label=paste(round(value,1),"% (",round(cl_lw,1)," , ",round(cl_up,1),")",sep="")), family=font_family,size = fsize,color="#42423E")
+				p<-p+geom_text(aes(label=paste(round(value,1),"% (",round(ci_lw,1)," , ",round(ci_up,1),")",sep="")), family=font_family,size = fsize,color="#42423E")
 			}
 		}else{
 			if(nb=="yes"){
@@ -605,16 +423,16 @@ graph_crosst_sc<-function(datag,labx,laby,nb,fsize,is_ordered,ordeR,font_family,
 		if(smult & nb=="No"){
 			typ<-"barVmult"
 			if(flip){
-				datag$disa<-factor(datag$disa,levels=rev(levels(factor(datag$disa))))
+				datag$rowname<-factor(datag$rowname,levels=rev(levels(factor(datag$rowname))))
 			}
-			p<-ggplot(data=datag, aes(x=variable, y=value, fill=disa))
+			p<-ggplot(data=datag, aes(x=variable, y=value, fill=rowname))
 			tp<-labx;labx<-laby;laby<-tp
 			p<-p+geom_bar(stat="identity",position = position_dodge(width = 0.9), alpha=.9)
 			p<-p+scale_x_discrete(limits=rev(ordeR))
 			
 		} else if(any(names(datag)%in%"facet")){
 			typ<-"facet_barV"
-			datag$disa<-as.character(datag$disa)
+			datag$rowname<-as.character(datag$rowname)
 			datag$facet<-as.character(datag$facet)
 			datag$variable<-as.character(datag$variable)
 			if(flip){
@@ -623,51 +441,51 @@ graph_crosst_sc<-function(datag,labx,laby,nb,fsize,is_ordered,ordeR,font_family,
 			
 			tp<-labx;labx<-laby;laby<-tp
 			
-			if(length(unique(datag$disa))==1){
+			if(length(unique(datag$rowname))==1){
 				p<-ggplot(data=datag, aes(x=variable, y=value, fill=facet))#,group=facet))
 				p<-p+geom_bar(stat="identity",position = position_dodge(width = 0.9), alpha=.9)
 			} else {
-				p<-ggplot(data=datag, aes(x=variable, y=value, fill=disa))#,group=facet))
+				p<-ggplot(data=datag, aes(x=variable, y=value, fill=rowname))#,group=facet))
 				p<-p+geom_bar(stat="identity",position = position_dodge(width = 0.9), alpha=.9)
 			}
 			
 			if(cl_yn){
-					p<-p+geom_errorbar(aes(ymin=cl_lw, ymax=cl_up),position = position_dodge(width = 0.9), alpha=.7,width=.5,color="#42423E")
+					p<-p+geom_errorbar(aes(ymin=ci_lw, ymax=ci_up),position = position_dodge(width = 0.9), alpha=.7,width=.5,color="#42423E")
 			}
 			
-			if(length(unique(datag$disa))!=1){
+			if(length(unique(datag$rowname))!=1){
 				p<-p+facet_wrap(~ facet)
 			}
 			
 		} else if(!smult & nb=="yes" & length(unique(datag$variable))==1 ){
 			typ<-"int"
 			if(flip){
-				datag$disa<-factor(datag$disa,levels=rev(levels(factor(datag$disa))))
+				datag$rowname<-factor(datag$rowname,levels=rev(levels(factor(datag$rowname))))
 			}
-			p<-ggplot(data=datag, aes(x=disa, y=value))
+			p<-ggplot(data=datag, aes(x=rowname, y=value))
 			p<-p+geom_bar(fill=colorsc,stat="identity",position = position_dodge(width = 0.9), alpha=.9)
 			
 		}else if(!smult & nb=="yes" & length(unique(datag$variable))>1 ){
 			typ<-"barHy"
 			 colorsc<-color_ramp(datag,"no",col_ramp,col_revert,H_col,smult,NULL)
 			if(flip){
-				datag$disa<-factor(datag$disa,levels=rev(levels(factor(datag$disa))))
+				datag$rowname<-factor(datag$rowname,levels=rev(levels(factor(datag$rowname))))
 			}
-			p<-ggplot(data=datag, aes(x=disa, y=value, fill=variable))
+			p<-ggplot(data=datag, aes(x=rowname, y=value, fill=variable))
 			p<-p+geom_bar(stat="identity",position = position_dodge(width = 0.9), alpha=.9)
 				
 		}else if(!smult & !(any(levels(as.factor(datag[,2]))=="Oui")) & !(any(levels(as.factor(datag[,2]))=="yes")) & !(any(levels(as.factor(datag[,2]))=="oui")) ){
 			typ<-"barHy"
 			if(flip){
-				datag$disa<-factor(datag$disa,levels=rev(levels(factor(datag$disa))))
+				datag$rowname<-factor(datag$rowname,levels=rev(levels(factor(datag$rowname))))
 				datag$variable<-factor(datag$variable,levels=rev(levels(factor(datag$variable))))
 			}
-			p<-ggplot(data=datag, aes(x=disa, y=value, fill=variable))
+			p<-ggplot(data=datag, aes(x=rowname, y=value, fill=variable))
 			p<-p+geom_bar(stat="identity",position = position_dodge(width = 0.9), alpha=.9)
 				
 		}else{
 				typ<-"barV"
-				p<-ggplot(data=datag, aes(x=variable, y=value, fill=disa))
+				p<-ggplot(data=datag, aes(x=variable, y=value, fill=rowname))
 				tp<-labx;labx<-laby;laby<-tp
 				p<-p+geom_bar(stat="identity",position = position_dodge(width = 0.9), alpha=.9)
 				if(is_ordered==TRUE){
@@ -679,11 +497,11 @@ graph_crosst_sc<-function(datag,labx,laby,nb,fsize,is_ordered,ordeR,font_family,
 	
 	
 		if(cl_yn & typ!="facet_barV"){
-			p<-p+geom_errorbar(aes(ymin=cl_lw, ymax=cl_up),position = position_dodge(width = 0.9), alpha=.7,width=.5,color="#42423E")
+			p<-p+geom_errorbar(aes(ymin=ci_lw, ymax=ci_up),position = position_dodge(width = 0.9), alpha=.7,width=.5,color="#42423E")
 		}
 		
 		# if(!smult & nb=="yes" & length(unique(datag$variable))==1 ){
-			# p<-p+geom_errorbar(aes(ymin=datag$cl_lw, ymax=datag$cl_up),position = position_dodge(width = 0.9), alpha=.7,width=.5,color="#42423E")
+			# p<-p+geom_errorbar(aes(ymin=datag$ci_lw, ymax=datag$ci_up),position = position_dodge(width = 0.9), alpha=.7,width=.5,color="#42423E")
 		# }
 		
 		if(typ=="facet_barV"){
@@ -805,13 +623,12 @@ graph_crosst_sc<-function(datag,labx,laby,nb,fsize,is_ordered,ordeR,font_family,
 graph_line<-function(datag,laby,fsize,font_family,H_col,nb,col_ramp,col_revert,cl_yn){
 	
 	
-	names(datag)[1]<-"disa"
+	#names(datag)[1]<-"rowname"
 	
 	if(cl_yn){
-		names(datag)[4:5]<-c("cl_lw","cl_up")
-		
-		datag$cl_lw<-as.numeric(as.character(datag$cl_lw))
-		datag$cl_up<-as.numeric(as.character(datag$cl_up))
+		#names(datag)[4:5]<-c("ci_lw","ci_up")
+		datag$ci_lw<-as.numeric(as.character(datag$ci_lw))
+		datag$ci_up<-as.numeric(as.character(datag$ci_up))
 	}
 	
 		datag$value<-as.numeric(as.character(datag$value))
@@ -820,12 +637,12 @@ graph_line<-function(datag,laby,fsize,font_family,H_col,nb,col_ramp,col_revert,c
 	if(nb=="yes"){
 	
 		colorsc<-color_ramp(datag,nb,col_ramp,col_revert,H_col,FALSE,NULL)
-		datag$disa<-factor(datag$disa,levels=levels(factor(datag$disa)))
-		p<-ggplot(data=datag, aes(x=disa, y=value,group=1))
-		p<-p+geom_ribbon(aes(ymin = cl_lw, ymax = cl_up), fill = H_col,alpha=0.05) 
+		datag$rowname<-factor(datag$rowname,levels=levels(factor(datag$rowname)))
+		p<-ggplot(data=datag, aes(x=rowname, y=value,group=1))
+		p<-p+geom_ribbon(aes(ymin = ci_lw, ymax = ci_up), fill = H_col,alpha=0.05) 
 		p<-p+geom_path(color=H_col,stat="identity",position = position_dodge(width = 0.9), alpha=.9,size=1.5)	
 			
-		p<-p+geom_errorbar(aes(ymin=cl_lw, ymax=cl_up),position = position_dodge(width = 0.9), alpha=.7,width=.5,color="#42423E")
+		p<-p+geom_errorbar(aes(ymin=ci_lw, ymax=ci_up),position = position_dodge(width = 0.9), alpha=.7,width=.5,color="#42423E")
 		p<-p+geom_text(aes(label = paste0(formatC(round(value,2), digits = 1, format = "f"))),position = position_dodge(width = 0.75),family=font_family,size = round(fsize*0.8,0),color="#42423E")+
 				scale_fill_manual(guide = guide_legend(reverse=TRUE),hyph(laby,10),values=colorsc)+
 				scale_y_continuous(breaks=NULL)
@@ -856,8 +673,8 @@ graph_line<-function(datag,laby,fsize,font_family,H_col,nb,col_ramp,col_revert,c
 			datag$facet<-as.factor(as.character(datag$facet))
 			
 		
-			if(length(unique(datag$disa))!=1){
-				p<-ggplot(data=datag, aes(x=disa, y=value, colour=variable, group=variable))
+			if(length(unique(datag$rowname))!=1){
+				p<-ggplot(data=datag, aes(x=rowname, y=value, colour=variable, group=variable))
 				colorsc<-color_ramp(datag,"no",col_ramp,col_revert,H_col,TRUE,"variable")
 			} else {
 				p<-ggplot(data=datag, aes(x=variable, y=value, colour=facet,  group=facet))
@@ -867,24 +684,24 @@ graph_line<-function(datag,laby,fsize,font_family,H_col,nb,col_ramp,col_revert,c
 			p<-p+geom_line(size=0.8)
 						
 			if(cl_yn){
-				p<-p+geom_ribbon(aes(ymin = cl_lw, ymax = cl_up) ,alpha=0.1,fill = "grey70",colour="white") 
+				p<-p+geom_ribbon(aes(ymin = ci_lw, ymax = ci_up) ,alpha=0.1,fill = "grey70",colour="white") 
 			}
 			
 			p<-p+scale_color_manual(guide = guide_legend(reverse=FALSE),hyph(laby,10),values=colorsc)
 			
-			if(length(unique(datag$disa))!=1){
+			if(length(unique(datag$rowname))!=1){
 				p<-p+facet_wrap(~ facet)
 			}
 			
 		} else {
 		
 			datag$variable<-as.numeric(as.character(datag$variable))
-			colorsc<-color_ramp(datag,nb,col_ramp,col_revert,H_col,FALSE,"disa")
+			colorsc<-color_ramp(datag,nb,col_ramp,col_revert,H_col,FALSE,"rowname")
 		
-			p<-ggplot(data=datag, aes(x=variable, y=value, colour=disa,group=disa))
+			p<-ggplot(data=datag, aes(x=variable, y=value, colour=rowname,group=rowname))
 			p<-p+geom_line(size=0.8)
 			if(cl_yn){
-				p<-p+geom_ribbon(aes(ymin = cl_lw, ymax = cl_up) ,alpha=0.1,fill = "grey70",colour="white") 
+				p<-p+geom_ribbon(aes(ymin = ci_lw, ymax = ci_up) ,alpha=0.1,fill = "grey70",colour="white") 
 			}
 			
 			p<-p+scale_color_manual(guide = guide_legend(reverse=FALSE),hyph(laby,10),values=colorsc)
@@ -917,22 +734,22 @@ graph_line<-function(datag,laby,fsize,font_family,H_col,nb,col_ramp,col_revert,c
 piechar<-function(datag,laby,sdonut,fsize,font_family,colorsc,cl_yn){
 	
 	# Add addition columns, needed for drawing with geom_rect.
-	names(datag)[1]<-"disa"
-	datag = datag[order(datag$disa), ]
+	#names(datag)[1]<-"rowname"
+	datag = datag[order(datag$rowname), ]
 	tf_cl<-FALSE
 	
 	if(cl_yn){
-		names(datag)[4:5]<-c("cl_lw","cl_up")
+		# names(datag)[4:5]<-c("ci_lw","ci_up")
 		tf_cl<-TRUE
 	}
 	
 	
 	
-	datag$fraction = do.call(c,tapply(datag$value, datag$disa, function(x) {x / sum(x)},simplify = TRUE))
+	datag$fraction = do.call(c,tapply(datag$value, datag$rowname, function(x) {x / sum(x)},simplify = TRUE))
 	
-	datag$ymax = do.call(c,tapply(datag$fraction, datag$disa, function(x) {cumsum(x)},simplify = TRUE))
-	datag$ymin = do.call(c,tapply(datag$ymax, datag$disa, function(x) {c(0, head(x, n=-1))},simplify = TRUE))
-	datag$pos = do.call(c,tapply(datag$fraction, datag$disa, function(x) {cumsum(x) -  x/2},simplify = TRUE))
+	datag$ymax = do.call(c,tapply(datag$fraction, datag$rowname, function(x) {cumsum(x)},simplify = TRUE))
+	datag$ymin = do.call(c,tapply(datag$ymax, datag$rowname, function(x) {c(0, head(x, n=-1))},simplify = TRUE))
+	datag$pos = do.call(c,tapply(datag$fraction, datag$rowname, function(x) {cumsum(x) -  x/2},simplify = TRUE))
 	datag<-as.data.frame(datag)
 	
 
@@ -940,10 +757,10 @@ piechar<-function(datag,laby,sdonut,fsize,font_family,colorsc,cl_yn){
 	p = ggplot(datag, aes(fill=as.factor(variable), ymax=ymax, ymin=ymin, xmax=100, xmin=sdonut)) 
 	p = p + geom_rect(colour="white",size=0.5) 
 	
-	p<-p+ facet_wrap( ~ disa, ncol=2)
+	p<-p+ facet_wrap( ~ rowname, ncol=2)
 	
 	if(tf_cl==TRUE){
-		p = p + geom_text(aes(x=mean(c(100,sdonut)), y=pos, label = paste(round(fraction*100,1),"% (",round(cl_lw,1)," , ",round(cl_up,1),")",sep="")), size=round(fsize*0.8,0), family=font_family) 
+		p = p + geom_text(aes(x=mean(c(100,sdonut)), y=pos, label = paste(round(fraction*100,1),"% (",round(ci_lw,1)," , ",round(ci_up,1),")",sep="")), size=round(fsize*0.8,0), family=font_family) 
 	}else{
 		p = p + geom_text(aes(x=mean(c(100,sdonut)), y=pos, label = paste(round(fraction*100,1),"%",sep="")), size=round(fsize*0.8,0), family=font_family) 
 	}

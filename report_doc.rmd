@@ -41,7 +41,6 @@ params:
 ---
 
 ```{r,echo = F, warning=FALSE, message=FALSE, results='asis' }
-
 library(knitr)
 opts_knit$set(progress = FALSE, verbose = FALSE)
 opts_chunk$set(warning=FALSE, message=FALSE, echo=FALSE)
@@ -66,6 +65,7 @@ for (i in 1:length(params$weight)){
 					}
 				}
 				)
+		
 			laby<-wrapit(
 				if(params$nomb[i]=="yes"){
 					if(is.na(params$laby[i])){
@@ -249,8 +249,8 @@ for (i in 1:length(params$weight)){
 		}	 
 
 
-			df<-dbgr[[1]][!dbgr[[1]][,1]%in%params$tabxfilter[[i]],]
-			df<-df[!df[,2]%in%params$tabyfilter[[i]],]
+			df<-dbgr[[1]][!dbgr[[1]]$rowname%in%params$tabxfilter[[i]],]
+			df<-df[!df$variable%in%params$tabyfilter[[i]],]
 			df<-sanit_dt(df)
 			
 			if(params$smult[i]){
@@ -264,21 +264,19 @@ for (i in 1:length(params$weight)){
 				
 			df$yi<-rep(params$yi[i],nrow(df))
 				
-			names(df)[names(df)=="X2.5.."]<-"2.5 %"
-			names(df)[names(df)=="X97.5.."]<-"97.5 %"
 			df<-df[!is.na(df$value),]
 
 		
 			if(params$nomb[i]=="yes"){
 				cdata <- df
-				ordeR<-cdata[with(cdata, order(-value)), ][,1]	
+				ordeR<-cdata[with(cdata, order(-value)), ]$rowname	
 			}else{	
-				if(length(unique(df[,2]))==1){
+				if(length(unique(df$variable))==1){
 					cdata <- df
-					ordeR<-cdata[with(cdata, order(-value, variable)), ][,1]
+					ordeR<-cdata[with(cdata, order(-value, variable)), ]$rowname
 				}else{
 					cdata <- ddply(df, "variable", summarise, mean = mean(value,na.rm=TRUE))
-					ordeR<-cdata[with(cdata, order(-mean, variable)), ][,1]
+					ordeR<-cdata[with(cdata, order(-mean, variable)), ]$rowname
 				}
 			}
 			
