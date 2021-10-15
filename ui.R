@@ -56,13 +56,19 @@ navbarPage("Analysis tool",
 				),
 				fluidRow(
 					column(2,
-						h6("Mutl target"),
-						checkboxInput('smult','S-mult Q',FALSE)
+						h6("Select multiple"),
+						checkboxInput('smult','',FALSE)
 						#)
 					),
 					
 					column(2,
 						selectInput('nomb', 'Numeric?', c("yes","no"), selected="no")
+					),
+					
+					column(2,
+					  conditionalPanel(condition = "input.nomb=='yes'",
+						  selectInput('type', 'Summary', c("avg","sum"), selected="avg")
+					  )
 					),
 					
 					column(2,
@@ -118,12 +124,16 @@ navbarPage("Analysis tool",
 						)
 					),
 					column(1,
+					  conditionalPanel(condition = "input.gptyp!='Pie Chart'&input.gptyp!='Heat map'",
 						h6("Flip"),
 						checkboxInput("flip", NULL, FALSE)
+					  )
 					),
 					column(1,
+					  conditionalPanel(condition = "input.gptyp!='Pie Chart'",
 						h6("Sort"),
 						checkboxInput("sort", NULL, FALSE)
+					  )
 					),
 					column(2,
 						numericInput('hgt', 'Height',400,min=100,	max=3000, step =50)
@@ -169,19 +179,21 @@ navbarPage("Analysis tool",
 				),width = 5
 			),
 			mainPanel(
+			  textOutput("textest"),
+			  DT::dataTableOutput("tableOut1"),
 				plotOutput('plot1',width = "100%"),
 				width = 7
 			)
 		)
 	),
 
-	tabPanel("Table",
-		textOutput("textest"),
-		tableOutput("tableOut1"),
-		conditionalPanel(condition = "input.nomb=='yes'",
-					tableOutput("statest")
-				)
-	),
+	# tabPanel("Table",
+	# 	textOutput("textest"),
+	# 	tableOutput("tableOut1"),
+	# 	conditionalPanel(condition = "input.nomb=='yes'",
+	# 				tableOutput("statest")
+	# 			)
+	# ),
 	tabPanel("Analysis Log", 
 		sidebarLayout(
 			sidebarPanel(
@@ -203,9 +215,13 @@ navbarPage("Analysis tool",
 		sidebarLayout(
 			sidebarPanel(
 				fluidRow(
-					fileInput('logfile', 'Choose CSV data file',accept=c('text/csv', 'text/comma-separated-values,text/plain')),
+					fileInput('logfile', 'Data: Choose CSV data file',accept=c('text/csv', 'text/comma-separated-values,text/plain')),
 					br(),
-					fileInput('data_update', 'Choose analysis log CSV file',accept=c('text/csv', 'text/comma-separated-values,text/plain')),
+					fileInput('data_update', 'Analysis log: Choose analysis log CSV file',accept=c('text/csv', 'text/comma-separated-values,text/plain')),
+					br(),
+					fileInput('questions', 'Questions: odk/kobo questionnaire in  CSV file',accept=c('text/csv', 'text/comma-separated-values,text/plain')),
+					br(),
+					fileInput('choices', 'Choices: odk/kobo questionnaire choices in  CSV file  ',accept=c('text/csv', 'text/comma-separated-values,text/plain')),
 					br(),
 					downloadButton("report", "Download report in html"),
 					br(),

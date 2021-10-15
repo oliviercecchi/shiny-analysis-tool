@@ -25,6 +25,11 @@ function(input, output, session) {
   	updateSelectInput(session, "fpop", choices = c("None",colnames(db())),selected="None")
   })
   
+  observe({
+    theclass<-ifelse(lapply(db(),class)[which(colnames(db()) %in% input$xi)]%in%c("numeric","decimal"),"yes","no")
+    updateSelectInput(session, "nomb", selected=theclass)
+  })
+  
   #log parameter for faster reloads
   observe({
 	  updateSelectInput(session, "D1filter", choices = c("None",colnames(db())),selected="None")
@@ -41,7 +46,6 @@ function(input, output, session) {
   observe({
 	  updateSelectInput(session, "T2filter", choices = c("None",levels(as.factor(db()[[input$D2filter]]))),selected="None")
   })
-  
   
   dfr<-eventReactive(input$plotButton,{
   #   
@@ -66,31 +70,30 @@ function(input, output, session) {
 		
 		de<-db()[,index]
 		
-		if(input$D1filter!="None"){
-			try(de<-de[!de[[input$D1filter]]%in%input$T1filter,],silent=TRUE)
-			#de<-de[,which(!names(de) %in% input$D1filter)]
-		}
-		
-		if(input$D2filter!="None"){
-			try(de<-de[!de[[input$D2filter]]%in%input$T2filter,],silent=TRUE)
-			#de<-de[,which(!names(de) %in% input$D2filter)]
-		}
+		if(input$D1filter!="None"){de<-de[de[[input$D1filter]]%in%input$T1filter,]}
+		if(input$D2filter!="None"){de<-de[de[[input$D2filter]]%in%input$T2filter,]}
 		
 		if(!input$smult){
 			de<-na.omit(de)
 		}
 		
-		if(input$smult & input$nomb=="no"){
-			for (o in input$sm_xi)
-			{
-				de[[o]]<-as.character(de[[o]])
-			}
-		}  else if( input$smult & input$nomb=="yes"){
-			for (o in input$sm_xi)
-			{
-				de[[o]]<-as.numeric(as.character(de[[o]]))
-			}
+		if(input$smult){
+		  de[,input$sm_xi]<- lapply(de[,input$sm_xi],function(x) {car::recode(x,"c('Yes','yes','TRUE',TRUE,'true','1',1)='yes'; c(0,'0','No','no',FALSE,'FALSE','false')='no'")}) %>% data.frame
+		  de<-de[de[,input$sm_xi] %>% apply(.,1,function(x){!all(is.na(x))}) %>% which,
+		         de %>%  apply(.,2,function(x){!all(is.na(x))}) %>% which]
+		  # sm_xi<-sm_xi[sm_xi%in%names(de)]
 		}
+		
+		if(input$smult){
+		  de[,input$sm_xi]<-lapply(de[,input$sm_xi],as.factor)
+		} else  if(input$nomb=="yes"){
+		  if(length(input$xi)>1){de[,input$xi]<-lapply(de[,input$xi],coerc)}else{de[[input$xi]] <- de[[input$xi]] %>% coerc}
+		} else{
+		  if(length(input$xi)>1){de[,input$xi]<-lapply(de[,input$xi],as.factor)}else{de[[input$xi]] <- de[[input$xi]] %>% as.factor}
+		}
+		
+		if(length(input$yi)>1){de[,input$yi]<-lapply(de[,input$yi],as.factor)}else{de[[input$yi]] <- de[[input$yi]] %>% as.factor}
+		
 
 		if(input$clt=="None"){
 			clust<-formula(paste0("~",1))
@@ -117,96 +120,40 @@ function(input, output, session) {
 		}else{
 			fpop<-formula(paste0("~",input$fpop))
 		}
-		 
 		
-		 if(input$smult & input$nomb=="yes"){
-			dsamp<-svydesign(
-				id=clust,
-				strata=strat,
-				weights=wgh,
-				fpc=fpop, 
-				data=de,
-				nest=TRUE
-			)
-			
-			dbgr<-process_num(input$sm_xi,input$yi,dsamp,CL)
+		de<- de %>% type_convert_silent()
 		
-		}else if (input$smult & input$nomb=="no"){
-			dsamp<-svydesign(
-				id=clust,
-				strata=strat,
-				weights=wgh,
-				fpc=fpop, 
-				data=de,
-				nest=TRUE
-			)
-			
-		dbgr<-process_smultiple(input$sm_xi,input$yi,dsamp,CL)
+		dsamp<-svydesign(
+		  id=clust,
+		  strata=strat,
+		  weights=wgh,
+		  fpc=fpop, 
+		  data=de,
+		  nest=TRUE
+		)	
 		
-		}else if(input$nomb=="yes" & length(input$yi)==1){
-			de[[input$xi]]<-as.numeric(as.character(de[[input$xi]]))
-			de[[input$yi]]<-as.factor(de[[input$yi]])
-			dsamp<-svydesign(
-				id=clust,
-				strata=strat,
-				weights=wgh,
-				fpc=fpop, 
-				data=de,
-				nest=TRUE
-			)
-			
-			dbgr<-process_num(input$xi,input$yi,dsamp,CL)
-			
-		}else if(length(input$yi)>1 & input$nomb=="yes"){
-		
-			de[[input$xi]]<-as.numeric(as.character(de[[input$xi]]))
-			for(o in input$yi){
-				de[[o]]<-as.character(de[[o]])
-			}
-			dsamp<-svydesign(
-				id=clust,
-				strata=strat,
-				weights=wgh,
-				fpc=fpop, 
-				data=de,
-				nest=TRUE
-			)
-			dbgr<-process_mutl_disa(input$xi,input$yi,dsamp,CL,input$nomb)
-		
-		}else if(length(input$yi)>1 & input$nomb!="yes"){
-		
-			de[[input$xi]]<-as.character(de[[input$xi]])
-			for(o in input$yi){
-				de[[o]]<-as.character(de[[o]])
-			}
-			dsamp<-svydesign(
-				id=clust,
-				strata=strat,
-				weights=wgh,
-				fpc=fpop, 
-				data=de,
-				nest=TRUE
-			)
-			dbgr<-process_mutl_disa(input$xi,input$yi,dsamp,CL,input$nomb)
-		
+		# do the aggregation
+		if(nrow(de)==0){
+		  showModal(modalDialog(
+		    title = "Warning",
+		    "No valid survey",
+		    easyClose = TRUE
+		  ))
+		  dbgr<-NULL
+		} else if(input$smult){
+		  dbgr<-process_smultiple(input$sm_xi,input$yi,dsamp,CL,stat.test=F)
+		}else  if(input$nomb=="yes" & length(input$yi)==1 ){
+		  type<-as.character(input$type)
+		  dbgr<-process_num(input$xi,input$yi,dsamp,CL, type=input$type,stat.test=F)
+		}else if(length(input$yi)>1){
+		  dbgr<-process_mutl_disa(input$xi,input$yi,dsamp,CL,input$nomb,stat.test=F)
 		}else{
-
-			de[[input$xi]]<-as.factor(de[[input$xi]])
-			de[[input$yi]]<-as.factor(de[[input$yi]])
-			dsamp<-svydesign(
-				id=clust,
-				strata=strat,
-				weights=wgh,
-				fpc=fpop, 
-				data=de,
-				nest=TRUE
-			)
-			dbgr<-process_categories(input$yi,input$xi,dsamp,CL)
-		 }
-	 
-	dbgr
+		  dbgr<-process_categories(input$yi,input$xi,dsamp,CL,stat.test=F)
+		}
+	  dbgr
 	 
    })
+  
   	
 	
 	s_design<-eventReactive(input$desButton,{
@@ -284,70 +231,80 @@ function(input, output, session) {
 	})
 
   observe({
-	updateSelectInput(session, "tabxfilter", choices = c("None",levels(as.factor(dfr()[[1]]$rowname))),selected="None")
-	updateSelectInput(session, "tabyfilter", choices = c("None",levels(as.factor(dfr()[[1]]$variable))),selected="None")
+  	  updateSelectInput(session, "tabxfilter", choices = c("None",levels(as.factor(dfr()[[1]]$rowname))),selected="None")
+  	  updateSelectInput(session, "tabyfilter", choices = c("None",levels(as.factor(dfr()[[1]]$variable))),selected="None")
   })
   
-	output$tableOut1 <- renderTable({dfr()[[1]]})
+	output$tableOut1 <- DT::renderDT({
+	  df<-dfr()[[1]]
+	  gh <- db()[[input$yi]] %>% table %>% data.frame
+	  names(gh)<-c("rowname","valid_n")
+	  df<-merge(df,gh,by="rowname",all.x=T)
+	  df$type_data<-input$nomb
+	  df$aggregation_type<-if(input$nomb=="yes"){if(input$type=="sum"){"sum"}else{"average"}}else{"percentage"}
+    datatable(as.data.frame(df)) #  %>%  formatRound('value', digits = 3) %>%  formatRound('ci_lw', digits = 3) %>%  formatRound('ci_up', digits = 3)
+	   
+	})
 	
   	output$out <- DT::renderDataTable({db()})
 	
     output$plot1 <- renderPlot({
-		df<-dfr()[[1]][!dfr()[[1]]$rowname%in%input$tabxfilter,]
-		df<-df[!df$variable%in%input$tabyfilter,]
-		df<-sanit_dt(df)
-		
-		if(input$smult){
-				spl<-str_split(input$sm_xi[1],"_._")
-				lab<-spl[[1]][length(spl[[1]])-1]
-					df$xi<-rep(lab,nrow(df))
-			} else {
-					df$xi<-rep(input$xi,nrow(df))
-			}
-				
-			df$yi<-rep(input$yi,nrow(df))
-	
-			df<-df[!is.na(df$value),]
-
-		
-		if(!input$smult & input$nomb=="yes"){
-			cdata <- df
-			ordeR<-cdata[with(cdata, order(-value)), ]$rowname
-		}else{	
-		  # CKECK HERE
-			if(length(unique(df$variable))==1){
-				cdata <- df
-				ordeR<-cdata[with(cdata, order(-value, variable)), ]$rowname
-			# CKECK HERE
-			}else{
-				cdata <- ddply(df, "variable", summarise, mean = mean(value,na.rm=TRUE))
-				ordeR<-cdata[with(cdata, order(-mean, variable)), ]$rowname
-			}
-		}
-		
-		par(mar = c(0, 4.1, 0, 1))
-		colorsc<-color_ramp(df,input$nomb,input$col_ramp,input$col_revert,input$H_col,input$smult,NULL)
-	
-    	 if(input$gptyp=="Line"){
-			    graph_line(df,laby(),input$fsize,input$ffont,input$H_col,input$nomb,input$col_ramp,input$col_revert,input$Y_cl)
-    	 }else if(input$gptyp=="Pie Chart"){		 
-			    piechar(df,laby(),input$sdonut,input$fsize,input$ffont,colorsc,input$Y_cl)
-    	 }else{ 
-    		  graph_crosst_sc(df,labx(),laby(),input$nomb,input$fsize,input$sort,ordeR,input$ffont,input$gptyp,input$flip,input$H_col,input$smult,input$col_ramp,input$col_revert,input$Y_cl)
-    	 }
-		 
-    },height = reactive(input$hgt),width = reactive(input$wdh))
+      if(!is.null(dfr())){
+    		df<-dfr()[[1]][!dfr()[[1]]$rowname%in%input$tabxfilter,]
+    		df<-df[!df$variable%in%input$tabyfilter,]
+    		df<-sanit_dt(df)
+    
+    		if(input$smult){
+    				spl<-str_split(input$sm_xi[1],"_._")
+    				lab<-spl[[1]][length(spl[[1]])-1]
+    					df$xi<-rep(lab,nrow(df))
+    			} else {
+    					df$xi<-rep(input$xi,nrow(df))
+    			}
+    				
+    			df$yi<-rep(input$yi,nrow(df))
+    	
+    			df<-df[!is.na(df$value),]
+    
+    		
+    		if(!input$smult & input$nomb=="yes"){
+    			cdata <- df
+    			ordeR<-cdata[with(cdata, order(-value)), ]$rowname
+    		}else{	
+    			if(length(unique(df$variable))==1){
+    				cdata <- df
+    				ordeR<-cdata[with(cdata, order(-value, variable)), ]$variable
+    			}else{
+    				cdata <- ddply(df, "variable", summarise, mean = mean(value,na.rm=TRUE))
+    				ordeR<-cdata[with(cdata, order(-mean, variable)), ]$variable
+    			}
+    		}
+    		
+    		par(mar = c(0, 4.1, 0, 1))
+    		colorsc<-color_ramp(df,input$nomb,input$col_ramp,input$col_revert,input$H_col,input$smult,NULL)
+    	
+        	 if(input$gptyp=="Line"){
+    			    graph_line(df,laby(),input$fsize,input$ffont,input$H_col,input$nomb,input$col_ramp,input$col_revert,input$Y_cl)
+        	 }else if(input$gptyp=="Pie Chart"){		 
+    			    piechar(df,laby(),input$sdonut,input$fsize,input$ffont,colorsc,input$Y_cl)
+        	 }else{ 
+        		  graph_crosst_sc(df,labx(),laby(),input$nomb,input$fsize,input$sort,ordeR,input$ffont,input$gptyp,input$flip,input$H_col,input$smult,input$col_ramp,input$col_revert,input$Y_cl)
+        	 }
+      }
+    },height = reactive(input$hgt), width = reactive(input$wdh))
 	
 		
 	# title of data
 	output$textest<-renderText({
-		paste0("x= ",labx()," ; y = ",laby()," ; ",dfr()[[3]])
+	  if(!is.null(dfr())){
+		  paste0("x= ",labx()," ; y = ",laby()," ; ",dfr()[[3]])
+	  }
 	})
 	
-		output$statest<-renderTable({
-			dfr()[[2]]
-		},include.rownames=T)
-	
+		# output$statest<-renderTable({
+		# 	dfr()[[2]]
+		# },include.rownames=T)
+		# 
 		
 	logt<-reactive({
 		as.data.frame(
@@ -369,6 +326,7 @@ function(input, output, session) {
 	# action to take when submit button is pressed
 	observeEvent(input$logButton, {
 	  saveData(logt())
+	  showNotification("Operation saved",type="message")
 	})
 	
 	loadData <- function() {
@@ -391,13 +349,7 @@ function(input, output, session) {
 		  options = list(searching = FALSE, lengthChange = FALSE)
 		  )
 	})
-		
-	
-	observeEvent(input$logButton, {
-		showNotification("Operation saved",type="message")
-    })
-	
-	
+
 	# get the log cleaned
 	observeEvent(input$delete, {
 		files<-list.files(path = paste0(getwd(),"/",responsesDir), 
@@ -411,8 +363,6 @@ function(input, output, session) {
 		}
 	})
 	
-	
-
 	output$downloadBtn <- downloadHandler(
 	  filename = function() { 
 		sprintf("analysis_plan_%s.csv", humanTime())
@@ -422,8 +372,6 @@ function(input, output, session) {
 	}
 	)
 	
-	
-
 	# redoing the analysis from the cleaning log
 	 log_analysis <- reactive({
 		inFile <- input$data_update
@@ -449,6 +397,28 @@ function(input, output, session) {
 		return(dt)
 		}
 	})
+	
+	
+	questions <- reactive({
+	  inFile <- input$questions
+	  if (is.null(inFile)){
+	    return(NULL)
+	  }else{
+	    dt<-read.csv(inFile$datapath)
+	    return(dt)
+	  }
+	})	
+
+	choices <- reactive({
+	  inFile <- input$choices
+	  if (is.null(inFile)){
+	    return(NULL)
+	  }else{
+	    dt<-read.csv(inFile$datapath)
+	    return(dt)
+	  }
+	})
+	
 	
   	# output$log_new <- DT::renderDataTable({log_analysis()})
 	

@@ -1,5 +1,10 @@
 proper<-function(s) sub("(.)", ("\\U\\1"), tolower(s), pe=TRUE)
 
+
+type_convert_silent <- function(x) suppressMessages(readr::type_convert(x))
+
+
+
 wrapit <- function(text) {
   wtext <- paste(strwrap(text,width=40),collapse=" \n ")
   return(wtext)
@@ -23,6 +28,7 @@ sanit_data<-function(x){
 	names(x)<-gsub("[()'?{}:&!@*%]","",names(x))
 	names(x)<-gsub("[,:]"," ",names(x))
 	names(x)<-gsub("[/-]","_._",names(x))
+	names(x)<-gsub(".","_._",names(x),fixed=T)
 	names(x)<-gsub("  "," ",names(x))
 	names(x)<-gsub("  "," ",names(x))
 	names(x)<-gsub(" ",".",names(x))
