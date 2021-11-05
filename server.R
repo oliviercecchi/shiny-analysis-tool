@@ -145,8 +145,8 @@ function(input, output, session) {
 		}else  if(input$nomb=="yes" & length(input$yi)==1 ){
 		  type<-as.character(input$type)
 		  dbgr<-process_num(input$xi,input$yi,dsamp,CL, type=input$type,stat.test=F)
-		}else if(length(input$yi)>1){
-		  dbgr<-process_mutl_disa(input$xi,input$yi,dsamp,CL,input$nomb,stat.test=F)
+		# }else if(length(input$yi)>1){
+		#   dbgr<-process_mutl_disa(input$xi,input$yi,dsamp,CL,input$nomb,stat.test=F)
 		}else{
 		  dbgr<-process_categories(input$yi,input$xi,dsamp,CL,stat.test=F)
 		}
@@ -242,11 +242,16 @@ function(input, output, session) {
 	  df<-merge(df,gh,by="rowname",all.x=T)
 	  df$type_data<-input$nomb
 	  df$aggregation_type<-if(input$nomb=="yes"){if(input$type=="sum"){"sum"}else{"average"}}else{"percentage"}
-    datatable(as.data.frame(df)) #  %>%  formatRound('value', digits = 3) %>%  formatRound('ci_lw', digits = 3) %>%  formatRound('ci_up', digits = 3)
-	   
+	  if(all((c("ci_lw","ci_up") %in% names(df)  ))){
+	    df$ci_lw<-round(as.numeric(df$ci_lw),2)
+	    df$ci_up<-round(as.numeric(df$ci_up),2)
+	  }
+	  df$value<-round(as.numeric(df$value),2)
+    as.data.frame(df)
 	})
-	
-  	output$out <- DT::renderDataTable({db()})
+
+	# show the table on the right of the loading area
+  	output$out <- renderPrint({summary(db())})
 	
     output$plot1 <- renderPlot({
       if(!is.null(dfr())){

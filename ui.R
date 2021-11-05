@@ -29,7 +29,17 @@ navbarPage("Analysis tool",
 				#)
 			),
 			mainPanel(
-				DT::dataTableOutput("out")
+			  # box(
+			  #   title = "Data Table", 
+			  #   status = "warning", 
+			  #   solidHeader = TRUE,
+			  #   width = 6,
+			  #   height = 142,
+			    verbatimTextOutput("out")
+			   # )
+			  
+			
+				#DT::dataTableOutput("out")
 			)
 		)
 	),

@@ -21,6 +21,7 @@ require(pander)
 require(RColorBrewer)
 require(markdown)
 require(colourpicker)
+require(DT)
 require(readr)
 
 

@@ -95,10 +95,19 @@ merge_cfint<-function(a,dbgr,y){
 process_num<-function(x,y,dstrat,CL,type="avg",stat.test=FALSE){
   for (dis in 1:length(x)) 
   {
-    f<-formula(paste0("~",y,"+",x[dis]))
-    ft<-formula(paste0(x[dis],"~",y))
+
     fx<-formula(paste0("~",x[dis]))
-    fy<-formula(paste0("~",y))
+    
+    if(length(y)>1){
+      f<-formula(paste0("~",x,"+",paste0("interaction(",paste(y,collapse=","),")")))
+      ft<-formula(paste0(x,"~",paste0("interaction(",paste(y,collapse=","),")")))
+      fy<-formula(paste0("~",paste0("interaction(",paste(y,collapse=","),")")))
+      
+    }else{
+      f<-formula(paste0("~",y,"+",x[dis]))
+      ft<-formula(paste0(x[dis],"~",y))
+      fy<-formula(paste0("~",y))
+    }
     
     if(type=="avg"){myfuny<-svymean}else if(type=="sum"){myfuny<-svytotal}
     
@@ -172,9 +181,16 @@ process_num<-function(x,y,dstrat,CL,type="avg",stat.test=FALSE){
 
 process_categories <- function (x,y,dstrat,CL,stat.test=FALSE){
 
-  f<-formula(paste0("~",x,"+",y))
   fx<-formula(paste0("~",x))
-  fy<-formula(paste0("~",y))
+  
+  if(length(y)>1){
+    f<-formula(paste0("~",x,"+",paste0("interaction(",paste(y,collapse=","),")")))
+    fy<-formula(paste0("~",paste0("interaction(",paste(y,collapse=","),")")))
+  }else{
+    f<-formula(paste0("~",x,"+",y))
+    fy<-formula(paste0("~",y))
+  }
+  
   tname<-NA;stat<-NA;stdf<-NA;pval<-NA;test<-NA
   
   if(length(na.omit(unique(dstrat$variable[[y]])))==1)
@@ -274,10 +290,6 @@ process_smultiple<-function (x,y,dstrat,CL,stat.test=FALSE){
 # aggregation with multiple disaggregation
 process_mutl_disa<-function(x,y,dstrat,CL,nb,stat.test=FALSE){
   
-  f<-formula(paste0("~",x,"+",paste0("interaction(",paste(y,collapse=","),")")))
-  ft<-formula(paste0(x,"~",paste0("interaction(",paste(y,collapse=","),")")))
-  fx<-formula(paste0("~",x))
-  fy<-formula(paste0("~",paste0("interaction(",paste(y,collapse=","),")")))
   
   if(nb=="no"){
     process_categories(y,x,dstrat,CL,stat.test=stat.test)
